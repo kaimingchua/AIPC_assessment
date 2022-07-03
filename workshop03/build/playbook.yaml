@@ -1,0 +1,76 @@
+- name: Download and Setup Code Server
+  hosts: all
+  vars:
+    download_dir: /usr/local/opt
+    download: "https://github.com/coder/code-server/releases/download/v{{ CS_version }}/code-server-{{ CS_version }}-linux-amd64.tar.gz"
+    cs_dir: "code-server-{{ CS_version }}-linux-amd64"
+    directories:
+    - "{{ download_dir }}"
+    - /var/lib/code-server
+  tasks:
+  - name: Create directory in /usr/local/opt
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: '0755'
+    loop: "{{ directories }}"
+  - name: Check if exists
+    stat:
+      path: "{{ download_dir }}/{{ cs_dir }}"
+    register: dir
+  - name: Download and unzip 
+    unarchive:
+      src: "{{ download }}"
+      dest: "{{ download_dir }}"
+      remote_src: yes
+    when: not dir.stat.exists
+  - name: Link cs_dir to /usr/lib/code-server
+    file:
+      src: "{{ download_dir }}/{{ cs_dir }}"
+      dest: /usr/lib/code-server
+      state: link
+  - name: Link code-server to /usr/bin/code-server
+    file:
+      src: /usr/lib/code-server/bin/code-server
+      dest: /usr/bin/code-server
+      state: link
+  - name: Create code-server service
+    copy:
+      src: code-server.service
+      dest: /lib/systemd/system/code-server.service
+      mode: '0644'
+  - name: Start code-server
+    systemd:
+      daemon_reload: yes
+      name: code-server
+      enabled: yes
+      state: started
+
+- name: Install and configure Nginx
+  hosts: all
+  tasks:
+  - name: Install Nginx
+    apt:
+      update_cache: yes
+      name: nginx
+      state: latest
+    register: result
+    until: result.stderr == ""
+    retries: 10
+    delay: 5
+  - name: Copy code-server.conf to /etc/nginx/sites-available
+    copy:
+      src: code-server.conf
+      dest: /etc/nginx/sites-available/code-server.conf
+      mode: '0644'
+  - name: Link code-server.conf to /etc/nginx/sites-enabled
+    file:
+      src: /etc/nginx/sites-available/code-server.conf
+      dest: /etc/nginx/sites-enabled/code-server.conf
+      state: link
+  - name: Restart Nginx
+    systemd:
+      name: nginx
+      enabled: yes
+      state: restarted
+
